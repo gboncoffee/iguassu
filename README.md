@@ -41,7 +41,8 @@ entire state until the argentinian and paraguayan border. There, it falls into
 beautiful waterfalls, and merges with the [Paraná
 river](https://en.wikipedia.org/wiki/Paran%C3%A1_River), right where the borders
 of the three countries join - a place called the [Triple
-Frontier](https://en.wikipedia.org/wiki/Triple_Frontier). Here a picture from
-the Iguassu waterfalls:
+Frontier](https://en.wikipedia.org/wiki/Triple_Frontier).
 
-![Iguassu waterfalls](https://gboncoffee.github.io/gallery/iguassu-waterfalls.jpg)
+![Iguassu waterfalls](iguassu-waterfalls.jpg)  
+Iguassu waterfalls, by me. Check the full-size picture at [my
+website](https://gboncoffee.github.io).
