@@ -184,6 +184,7 @@ void reshape_client(Iguassu *i, Client *c)
 			reshaping = 1;
 			XMoveResizeWindow(i->dpy, i->swipe_win, x, y, 1, 1);
 			XMapWindow(i->dpy, i->swipe_win);
+			XRaiseWindow(i->dpy, i->swipe_win);
 			break;
 		default:
 			/* New map requests during reshape is kinda buggy. */
