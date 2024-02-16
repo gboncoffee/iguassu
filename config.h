@@ -19,7 +19,7 @@ static const char *menu_color_f[2] = { "#eaffea", "#448844" };
 
 /* Reshape will use this width and/or height (pixels) if trying to resize to
  * less than it, thus preventing resizing to dumb window sizes. */
-#define MIN_WINDOW_SIZE 10
+#define MIN_WINDOW_SIZE 20
 
 /* Program to spawn on "new". */
 #define TERMINAL "alacritty"
@@ -27,4 +27,16 @@ static const char *menu_color_f[2] = { "#eaffea", "#448844" };
 /* This sets the actual menu length. 'm' is usually a quite wide character
  * even for variable fonts so you don't need much to get your desired
  * length. */
-#define MENU_LENGTH "mmmmmmmmmmmm"
+#define MENU_LENGTH "mmmmmmmmmmmmmmmmmmmm"
+
+/* There are two keybinds and both need the modmask. */
+#define MODMASK (Mod4Mask)
+
+#define FULLSCREEN_KEY XK_f
+#define RESHAPE_KEY XK_r
+
+/* These are the only needed keybinds because:
+ * 1- Fullscreen is very desirable nowadays and you need a keybind for that
+ * (it's impossible to access the menu when a window is fullscreen)
+ * 2- Sometimes windows may accidentally hide the entire root and you need
+ * to reshape them to access the menu. */

@@ -3,6 +3,8 @@
 #include <X11/Xutil.h>
 #include <X11/Xcursor/Xcursor.h>
 #include <X11/X.h>
+/* #include <X11/keysym.h> */
+/* #include <X11/Xproto.h> */
 #include <ctype.h>
 #include <assert.h>
 #include <unistd.h>
@@ -58,6 +60,8 @@ typedef struct Iguassu {
 	Window root;
 	int wnumber;
 	Cursors cursors;
+	KeyCode fkey;
+	KeyCode rkey;
 } Iguassu;
 
 #include "config.h"
@@ -97,6 +101,15 @@ Client *find_previous_window(Client *c, Window win)
 	if (c->next->id == win)
 		return c;
 	return find_previous_window(c->next, win);
+}
+
+Client *get_current(Client *c)
+{
+	if (c == NULL)
+		return NULL;
+	if (!c->hidden)
+		return c;
+	return get_current(c->next);
 }
 
 int n_hidden(Client *c)
@@ -140,7 +153,7 @@ void focus(Iguassu *i, Window win)
 		i->clients = c;
 	}
 
-	XRaiseWindow(i->dpy, win);
+	XMapRaised(i->dpy, win);
 	XSetInputFocus(i->dpy, win, RevertToParent, CurrentTime);
 }
 
@@ -251,8 +264,10 @@ clean:
 void reshape_client(Iguassu *i, Client *c)
 {
 	XEvent ev;
-	int fx, fy, x, y, w, h;
+	int fx, fy, x, y;
 	int reshaping = 0;
+	int w = MIN_WINDOW_SIZE;
+	int h = MIN_WINDOW_SIZE;
 
 	XGrabPointer(
 		i->dpy,
@@ -273,14 +288,14 @@ void reshape_client(Iguassu *i, Client *c)
 		case MotionNotify:
 			if (reshaping) {
 				if (ev.xbutton.x_root < fx) {
-					w = fx - ev.xbutton.x_root + 1;
+					w = fx - ev.xbutton.x_root;
 					x = ev.xbutton.x_root;
 				} else {
 					w = ev.xbutton.x_root - fx + 1;
 					x = fx;
 				}
 				if (ev.xbutton.y_root < fy) {
-					h = fy - ev.xbutton.y_root + 1;
+					h = fy - ev.xbutton.y_root;
 					y = ev.xbutton.y_root;
 				} else {
 					h = ev.xbutton.y_root - fy + 1;
@@ -302,6 +317,8 @@ void reshape_client(Iguassu *i, Client *c)
 				goto clean;
 			fx = ev.xbutton.x_root;
 			fy = ev.xbutton.y_root;
+			x = fx;
+			y = fy;
 			reshaping = 1;
 			XMoveResizeWindow(i->dpy, i->swipe_win, x, y, 1, 1);
 			XMapWindow(i->dpy, i->swipe_win);
@@ -323,6 +340,31 @@ void reshape_client(Iguassu *i, Client *c)
 clean:
 	XUnmapWindow(i->dpy, i->swipe_win);
 	XUngrabPointer(i->dpy, CurrentTime);
+}
+
+void fullscreen_client(Iguassu *i, Client *c)
+{
+	XEvent ev;
+	XKeyEvent e;
+	XSetWindowBorderWidth(i->dpy, c->id, 0);
+	XMoveResizeWindow(i->dpy, c->id, 0, 0, i->sw, i->sh);
+
+	for (;;) {
+		XSync(i->dpy, False);
+		XNextEvent(i->dpy, &ev);
+
+		if (ev.type == KeyPress) {
+			e = ev.xkey;
+
+			if (e.state == MODMASK && i->fkey == e.keycode) {
+				XSetWindowBorderWidth(i->dpy, c->id, BORDER_WIDTH);
+				reshape_client(i, c);
+				return;
+			}
+		} else {
+			handle_event(i, &ev);
+		}
+	}
 }
 
 void property_change(Iguassu *i, XEvent *ev)
@@ -372,6 +414,9 @@ void manage(Iguassu *i, Window win, XWindowAttributes *wa)
 		GrabModeSync,
 		None,
 		None);
+
+	XGrabKey(i->dpy, i->fkey, MODMASK, win, True, GrabModeAsync, GrabModeAsync);
+	XGrabKey(i->dpy, i->rkey, MODMASK, win, True, GrabModeAsync, GrabModeAsync);
 
 	XSelectInput(i->dpy,
 		win,
@@ -700,6 +745,22 @@ void button_press(Iguassu *i, XEvent *e)
 	}
 }
 
+void key_press(Iguassu *i, XEvent *e)
+{
+	XKeyEvent *ev = &e->xkey;
+	Client *c;
+
+	if (ev->state == MODMASK) {
+		if (i->fkey == ev->keycode) {
+			if ((c = get_current(i->clients)) != NULL)
+				fullscreen_client(i, c);
+		} else if (i->rkey == ev->keycode) {
+			if ((c = get_current(i->clients)) != NULL)
+				reshape_client(i, c);
+		}
+	}
+}
+
 void handle_event(Iguassu *i, XEvent *ev)
 {
 	switch (ev->type) {
@@ -707,7 +768,7 @@ void handle_event(Iguassu *i, XEvent *ev)
 		button_press(i, ev);
 		break;
 	case KeyPress:
-		printf("received keypress\n");
+		key_press(i, ev);
 		break;
 	case MapRequest:
 		map_requested(i, ev);
@@ -758,6 +819,7 @@ int main(void)
 {
 	Iguassu iguassu;
 	XSetWindowAttributes swa;
+	KeyCode code;
 
 	if (!(iguassu.dpy = XOpenDisplay(NULL)))
 		return 1;
@@ -824,6 +886,24 @@ int main(void)
 	XClearWindow(iguassu.dpy, iguassu.root);
 #endif
 	XDefineCursor(iguassu.dpy, iguassu.root, iguassu.cursors.left_ptr);
+
+	/* Grab the keys. */
+	iguassu.fkey = XKeysymToKeycode(iguassu.dpy, FULLSCREEN_KEY);
+	XGrabKey(iguassu.dpy,
+		iguassu.fkey,
+		MODMASK,
+		iguassu.root,
+		True,
+		GrabModeAsync,
+		GrabModeAsync);
+	iguassu.rkey = XKeysymToKeycode(iguassu.dpy, RESHAPE_KEY);
+	XGrabKey(iguassu.dpy,
+		iguassu.rkey,
+		MODMASK,
+		iguassu.root,
+		True,
+		GrabModeAsync,
+		GrabModeAsync);
 
 	scan(&iguassu);
 	main_loop(&iguassu);
