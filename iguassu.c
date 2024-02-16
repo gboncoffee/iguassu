@@ -29,11 +29,6 @@
  * THE SOFTWARE.
  */
 
-/*
- * TODO:
- * - Fix event handling when grabbing.
- */
-
 typedef struct Client {
 	char *name;
 	Window id;
@@ -130,10 +125,62 @@ Window select_win(Iguassu *i)
 	return sel;
 }
 
+void move_client(Iguassu *i, Client *c)
+{
+	XEvent ev;
+	int x, y, width, height;
+	int delta_x, delta_y;
+	int _dumb;
+
+	XGetGeometry(i->dpy, c->id, &_dumb, &x, &y, &width, &height, &_dumb, &_dumb);
+	XMoveResizeWindow(i->dpy, i->swipe_win, x, y, width, height);
+	XMapWindow(i->dpy, i->swipe_win);
+	XRaiseWindow(i->dpy, i->swipe_win);
+
+	XQueryPointer(i->dpy, i->swipe_win, &_dumb, &_dumb, &_dumb, &_dumb,
+		&delta_x, &delta_y, &_dumb);
+
+	XGrabPointer(
+		i->dpy,
+		i->root,
+		True,
+		PointerMotionMask | ButtonPressMask | ButtonReleaseMask,
+		GrabModeAsync,
+		GrabModeAsync,
+		None,
+		i->cursors.fleur,
+		CurrentTime);
+
+	for (int exit = 0; !exit;) {
+		XSync(i->dpy, False);
+		XNextEvent(i->dpy, &ev);
+
+		switch (ev.type) {
+		case MotionNotify:
+			x = ev.xbutton.x - delta_x;
+			y = ev.xbutton.y - delta_y;
+			XMoveWindow(i->dpy, i->swipe_win, x, y);
+			break;
+		case ButtonPress:
+			goto clean;
+		case ButtonRelease:
+			exit = 1;
+		default:
+			handle_event(i, &ev);
+		}
+	}
+
+	XMoveWindow(i->dpy, c->id, x, y);
+
+clean:
+	XUnmapWindow(i->dpy, i->swipe_win);
+	XUngrabPointer(i->dpy, CurrentTime);
+}
+
 void reshape_client(Iguassu *i, Client *c)
 {
 	XEvent ev;
-	int x, y, w, h;
+	int fx, fy, x, y, w, h;
 	int reshaping = 0;
 
 	XGrabPointer(
@@ -153,21 +200,24 @@ void reshape_client(Iguassu *i, Client *c)
 
 		switch (ev.type) {
 		case MotionNotify:
-			if (ev.xbutton.x < x) {
-				x = ev.xbutton.x;
-				w = (x - ev.xbutton.x) + 1;
-			} else {
-				w = (ev.xbutton.x - x) + 1;
-			}
+			if (reshaping) {
+				if (ev.xbutton.x_root < fx) {
+					w = fx - ev.xbutton.x_root + 1;
+					x = ev.xbutton.x_root;
+				} else {
+					w = ev.xbutton.x_root - fx + 1;
+					x = fx;
+				}
+				if (ev.xbutton.y_root < fy) {
+					h = fy - ev.xbutton.y_root + 1;
+					y = ev.xbutton.y_root;
+				} else {
+					h = ev.xbutton.y_root - fy + 1;
+					y = fy;
+				}
 
-			if (ev.xbutton.y < y) {
-				y = ev.xbutton.y;
-				h = (y - ev.xbutton.y) + 1;
-			} else {
-				h = (ev.xbutton.y - y) + 1;
+				XMoveResizeWindow(i->dpy, i->swipe_win, x, y, w, h);
 			}
-
-			XMoveResizeWindow(i->dpy, i->swipe_win, x, y, w, h);
 			break;
 		case ButtonRelease:
 			/* Avoid events BEFORE actually reshaping. */
@@ -179,15 +229,14 @@ void reshape_client(Iguassu *i, Client *c)
 			 * high-level language* */
 			if (ev.xbutton.button == Button2 || ev.xbutton.button == Button1)
 				goto clean;
-			x = ev.xbutton.x;
-			y = ev.xbutton.y;
+			fx = ev.xbutton.x_root;
+			fy = ev.xbutton.y_root;
 			reshaping = 1;
 			XMoveResizeWindow(i->dpy, i->swipe_win, x, y, 1, 1);
 			XMapWindow(i->dpy, i->swipe_win);
 			XRaiseWindow(i->dpy, i->swipe_win);
 			break;
 		default:
-			/* New map requests during reshape is kinda buggy. */
 			handle_event(i, &ev);
 		}
 	}
@@ -229,8 +278,6 @@ void manage(Iguassu *i, Window win, XWindowAttributes *wa)
 		win,
 		PointerMotionMask
 		| PropertyChangeMask);
-
-	reshape_client(i, new_client);
 
 	XSetWindowBorder(i->dpy, win, BORDER_COLOR);
 	XSetWindowBorderWidth(i->dpy, win, BORDER_WIDTH);
@@ -346,6 +393,11 @@ void main_menu(Iguassu *i, int x, int y)
 		}
 		break;
 	case MENU_MOVE:
+		win = select_win(i);
+		if (win != None) {
+			if ((cli = find_window(i->clients, win)) != NULL)
+				move_client(i, cli);
+		}
 		break;
 	case MENU_DELETE:
 		break;

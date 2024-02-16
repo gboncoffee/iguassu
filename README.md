@@ -6,7 +6,6 @@ Iguassu is a rio clone for X11.
 
 Differences from Plan 9 From User Space rio:  
 - Text rendering via Xft so TrueType support.  
-- No protocol for menus with 9term so no buggy menu.  
 - Configuration via source code only (`config.h`).  
 
 ## Build
@@ -43,6 +42,6 @@ river](https://en.wikipedia.org/wiki/Paran%C3%A1_River), right where the borders
 of the three countries join - a place called the [Triple
 Frontier](https://en.wikipedia.org/wiki/Triple_Frontier).
 
-![Iguassu waterfalls](iguassu-waterfalls.jpg)  
+![Iguassu waterfalls](iguassu-waterfalls.jpg)
 Iguassu waterfalls, by me. Check the full-size picture at [my
 website](https://gboncoffee.github.io).
