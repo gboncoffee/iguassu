@@ -64,7 +64,8 @@ typedef struct Iguassu {
 
 /* Not configurable because obvious. If you change this anyway, go to `void
  * main_menu(Iguassu *i, int x, int y)` and change the function according.
- * The function draw_main_menu may also be changed. */
+ * The function draw_main_menu may also be changed.
+ * EDIT: same for the client_menu */
 static const char *main_menu_items[] = {
 	"New",
 	"Reshape",
@@ -106,6 +107,13 @@ int n_hidden(Client *c)
 	return c->hidden + n_hidden(c->next);
 }
 
+int n_cli(Client *c)
+{
+	if (c == NULL)
+		return 0;
+	return 1 + n_cli(c->next);
+}
+
 void restore_focus(Iguassu *i)
 {
 	Client *c = i->clients;
@@ -124,7 +132,8 @@ void restore_focus(Iguassu *i)
 void focus(Iguassu *i, Window win)
 {
 	Client *p = find_previous_window(i->clients, win);
-	Client *c;
+	Client *c = find_window(i->clients, win);
+	c->hidden = 0;
 	if (p != NULL) {
 		c = p->next;
 		p->next = c->next;
@@ -134,6 +143,21 @@ void focus(Iguassu *i, Window win)
 
 	XRaiseWindow(i->dpy, win);
 	XSetInputFocus(i->dpy, win, RevertToParent, CurrentTime);
+}
+
+void focus_by_idx(Iguassu *i, int n)
+{
+	Client *c = i->clients;
+
+	while (c != NULL) {
+		if (n == 0) {
+			focus(i, c->id);
+			return;
+		}
+		n--;
+
+		c = c->next;
+	}
 }
 
 Window select_win(Iguassu *i)
@@ -418,7 +442,7 @@ int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h,
 	int r = -1;
 	Client *c = i->clients;
 
-	drw_rect(i->menu_drw, 0, 0, w, h * 5, 1, 0);
+	drw_rect(i->menu_drw, 0, 0, w, h * (5 + n_hid), 1, 0);
 
 	in_menu = cur_x >= 0 && cur_y >= 0 && cur_x <= h * (5 + n_hid) && cur_y <= w;
 	for (j = 0; j < 5; j++) {
@@ -448,6 +472,35 @@ int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h,
 	}
 
 	drw_map(i->menu_drw, i->menu_win, 0, 0, w, h * (5 + n_hid));
+
+	return r;
+}
+
+int draw_client_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h, int nc)
+{
+	int j, in_menu;
+	int r = -1;
+	Client *c = i->clients;
+
+	drw_rect(i->menu_drw, 0, 0, w, h * nc, 1, 0);
+
+	in_menu = cur_x >= 0 && cur_y >= 0 && cur_x <= h * nc && cur_y <= w;
+	j = 0;
+	while (c != NULL) {
+		if (in_menu && cur_x >= h * j && cur_x < h * (j + 1)) {
+			drw_setscheme(i->menu_drw, i->menu_color_f);
+			r = j;
+		} else {
+			drw_setscheme(i->menu_drw, i->menu_color);
+		}
+		drw_text(i->menu_drw, 0, h * j, w, h, 0, c->name, 0);
+
+		j++;
+
+		c = c->next;
+	}
+
+	drw_map(i->menu_drw, i->menu_win, 0, 0, w, h * nc);
 
 	return r;
 }
@@ -488,6 +541,7 @@ void main_menu(Iguassu *i, int x, int y)
 			exit = 1;
 			break;
 		case MotionNotify:
+			n_hid = n_hidden(i->clients);
 			sel = draw_main_menu(
 				i,
 				x,
@@ -547,6 +601,66 @@ void main_menu(Iguassu *i, int x, int y)
 	}
 }
 
+void client_menu(Iguassu *i, int x, int y)
+{
+	int w, h, sel, win, nc;
+	Client *cli;
+	XEvent ev;
+
+	nc = n_cli(i->clients);
+	XMapRaised(i->dpy, i->menu_win);
+
+	/* This keeps our menu consistent. */
+	drw_font_getexts(i->menu_font, "Reshape", 7, &w, &h);
+
+	x = x - (w / 2);
+	XMoveResizeWindow(i->dpy, i->menu_win, x, y, w, h * nc);
+	drw_resize(i->menu_drw, w, h * nc);
+	sel = draw_client_menu(i, x, y, x, y, w, h, nc);
+
+	XGrabPointer(i->dpy,
+		i->menu_win,
+		False,
+		PointerMotionMask | ButtonPressMask | ButtonReleaseMask,
+		GrabModeAsync,
+		GrabModeAsync,
+		i->menu_win,
+		i->cursors.left_ptr,
+		CurrentTime);
+
+	for (int exit = 0; !exit;) {
+		XSync(i->dpy, False);
+		XNextEvent(i->dpy, &ev);
+
+		switch (ev.type) {
+		case ButtonPress:
+		case ButtonRelease:
+			exit = 1;
+			break;
+		case MotionNotify:
+			nc = n_cli(i->clients);
+			sel = draw_client_menu(
+				i,
+				x,
+				y,
+				ev.xmotion.y,
+				ev.xmotion.x,
+				w,
+				h,
+				nc);
+			break;
+		default:
+			handle_event(i, &ev);
+		}
+	}
+
+	XUnmapWindow(i->dpy, i->menu_win);
+	XUngrabPointer(i->dpy, CurrentTime);
+
+	if (sel > -1)
+		focus_by_idx(i, sel);
+}
+
 void button_press(Iguassu *i, XEvent *e)
 {
 	XButtonEvent ev = e->xbutton;
@@ -555,7 +669,7 @@ void button_press(Iguassu *i, XEvent *e)
 		if (ev.button == Button3)
 			main_menu(i, ev.x_root, ev.y_root);
 		else
-			printf("other menu\n");
+			client_menu(i, ev.x_root, ev.y_root);
 	} else {
 		focus(i, ev.window);
 	}
