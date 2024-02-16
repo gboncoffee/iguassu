@@ -32,7 +32,6 @@
 typedef struct Client {
 	char *name;
 	Window id;
-	int mapped;
 	struct Client *next;
 } Client;
 
@@ -155,13 +154,14 @@ void move_client(Iguassu *i, Client *c)
 	int x, y, width, height;
 	int delta_x, delta_y;
 	int _dumb;
+	Window _dumbw;
 
-	XGetGeometry(i->dpy, c->id, &_dumb, &x, &y, &width, &height, &_dumb, &_dumb);
+	XGetGeometry(i->dpy, c->id, &_dumbw, &x, &y, &width, &height, &_dumb, &_dumb);
 	XMoveResizeWindow(i->dpy, i->swipe_win, x, y, width, height);
 	XMapWindow(i->dpy, i->swipe_win);
 	XRaiseWindow(i->dpy, i->swipe_win);
 
-	XQueryPointer(i->dpy, i->swipe_win, &_dumb, &_dumb, &_dumb, &_dumb,
+	XQueryPointer(i->dpy, i->swipe_win, &_dumbw, &_dumbw, &_dumb, &_dumb,
 		&delta_x, &delta_y, &_dumb);
 
 	XGrabPointer(
@@ -338,6 +338,29 @@ void map_requested(Iguassu *i, XEvent *ev)
 		manage(i, e->window, &wa);
 }
 
+void unmanage(Iguassu *i, Client *c)
+{
+	Client *p = find_previous_window(i->clients, c->id);
+	if (p != NULL)
+		p->next = c->next;
+	else if (i->clients == c)
+		i->clients = c->next;
+	XFree(c->name);
+	free(c);
+	if (i->clients != NULL) {
+		XRaiseWindow(i->dpy, i->clients->id);
+		XSetInputFocus(i->dpy, i->clients->id, RevertToParent, CurrentTime);
+	}
+}
+
+void destroy_notify(Iguassu *i, XEvent *ev)
+{
+	XDestroyWindowEvent *e = &ev->xdestroywindow;
+	Client *c = find_window(i->clients, e->window);
+	if (c != NULL)
+		unmanage(i, c);
+}
+
 int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h)
 {
 	int j, in_menu;
@@ -437,6 +460,10 @@ void main_menu(Iguassu *i, int x, int y)
 		}
 		break;
 	case MENU_DELETE:
+		win = select_win(i);
+		if (win != None) {
+			XKillClient(i->dpy, win);
+		}
 		break;
 	case MENU_HIDE:
 		break;
@@ -470,7 +497,7 @@ void handle_event(Iguassu *i, XEvent *ev)
 		map_requested(i, ev);
 		break;
 	case DestroyNotify:
-		printf("received destroy notify\n");
+		destroy_notify(i, ev);
 		break;
 	case UnmapNotify:
 		printf("received unmap notify\n");
