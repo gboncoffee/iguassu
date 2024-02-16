@@ -1,5 +1,3 @@
-# WIP
-
 # Iguassu - rio clone for X11
 
 Iguassu is a rio clone for X11.
@@ -7,6 +5,15 @@ Iguassu is a rio clone for X11.
 Differences from Plan 9 From User Space rio:  
 - Text rendering via Xft so TrueType support.  
 - Configuration via source code only (`config.h`).  
+- No compiled limits.  
+- Two keybinds: one for fullscreen and one for reshaping.  
+
+Stuff I still want to add in the future:  
+- The autohiding of obscured windows feature from the Plan 9 version.  
+- Fix the menu in 9term. Apparently, 9term repasses the button 3 click as a root
+  window event and I didn't managed to differentiate it from a real click. The
+  result of this is a buggy behaviour when right-clicking 9term (this happens in
+  the Plan 9 From User Space rio too).  
 
 ## Build
 
