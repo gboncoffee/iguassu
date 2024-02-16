@@ -32,6 +32,7 @@
 typedef struct Client {
 	char *name;
 	Window id;
+	short int hidden;
 	struct Client *next;
 } Client;
 
@@ -96,6 +97,28 @@ Client *find_previous_window(Client *c, Window win)
 	if (c->next->id == win)
 		return c;
 	return find_previous_window(c->next, win);
+}
+
+int n_hidden(Client *c)
+{
+	if (c == NULL)
+		return 0;
+	return c->hidden + n_hidden(c->next);
+}
+
+void restore_focus(Iguassu *i)
+{
+	Client *c = i->clients;
+	
+	while (c != NULL) {
+		if (!c->hidden) {
+			XRaiseWindow(i->dpy, c->id);
+			XSetInputFocus(i->dpy, c->id, RevertToParent, CurrentTime);
+			return;
+		}
+
+		c = c->next;
+	}
 }
 
 void focus(Iguassu *i, Window win)
@@ -291,6 +314,7 @@ void manage(Iguassu *i, Window win, XWindowAttributes *wa)
 	Client *new_client = malloc(sizeof(Client));
 	assert((new_client != NULL) || "Buy more ram lol");
 
+	new_client->hidden = 0;
 	new_client->id = win;
 	new_client->next = i->clients;
 	i->clients = new_client;
@@ -347,10 +371,8 @@ void unmanage(Iguassu *i, Client *c)
 		i->clients = c->next;
 	XFree(c->name);
 	free(c);
-	if (i->clients != NULL) {
-		XRaiseWindow(i->dpy, i->clients->id);
-		XSetInputFocus(i->dpy, i->clients->id, RevertToParent, CurrentTime);
-	}
+	
+	restore_focus(i);
 }
 
 void destroy_notify(Iguassu *i, XEvent *ev)
@@ -361,14 +383,44 @@ void destroy_notify(Iguassu *i, XEvent *ev)
 		unmanage(i, c);
 }
 
-int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h)
+void hide(Iguassu *i, Window win)
+{
+	Client *c = find_window(i->clients, win);
+	if (c != NULL) {
+		c->hidden = 1;
+		XUnmapWindow(i->dpy, c->id);
+	}
+	
+	restore_focus(i);
+}
+
+void unhide_by_idx(Iguassu *i, int n)
+{
+	Client *c = i->clients;
+	while (c != NULL) {
+		if (c->hidden) {
+			n--;
+			if (n == 0) {
+				c->hidden = 0;
+				XMapWindow(i->dpy, c->id);
+				focus(i, c->id);
+				return;
+			}
+		}
+
+		c = c->next;
+	}
+}
+
+int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h, int n_hid)
 {
 	int j, in_menu;
 	int r = -1;
+	Client *c = i->clients;
 
 	drw_rect(i->menu_drw, 0, 0, w, h * 5, 1, 0);
 
-	in_menu = cur_x >= 0 && cur_y >= 0 && cur_x <= h * 5 && cur_y <= w;
+	in_menu = cur_x >= 0 && cur_y >= 0 && cur_x <= h * (5 + n_hid) && cur_y <= w;
 	for (j = 0; j < 5; j++) {
 		if (in_menu && cur_x >= h * j && cur_x < h * (j + 1)) {
 			drw_setscheme(i->menu_drw, i->menu_color_f);
@@ -378,26 +430,43 @@ int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h)
 		}
 		drw_text(i->menu_drw, 0, h * j, w, h, 0, main_menu_items[j], 0);
 	}
+	
+	while (c != NULL) {
+		if (c->hidden) {
+			if (in_menu && cur_x >= h * j && cur_x < h * (j + 1)) {
+				drw_setscheme(i->menu_drw, i->menu_color_f);
+				r = j;
+			} else {
+				drw_setscheme(i->menu_drw, i->menu_color);
+			}
+			drw_text(i->menu_drw, 0, h * j, w, h, 0, c->name, 0);
 
-	drw_map(i->menu_drw, i->menu_win, 0, 0, w, h * 5);
+			j++;
+		}
+
+		c = c->next;
+	}
+
+	drw_map(i->menu_drw, i->menu_win, 0, 0, w, h * (5 + n_hid));
 
 	return r;
 }
 
 void main_menu(Iguassu *i, int x, int y)
 {
-	int w, h, sel, pid, win;
+	int w, h, sel, pid, win, n_hid;
 	Client *cli;
 	XEvent ev;
 
+	n_hid = n_hidden(i->clients);
 	XMapRaised(i->dpy, i->menu_win);
 
 	drw_font_getexts(i->menu_font, "Reshape", 7, &w, &h);
 
 	x = x - (w / 2);
-	XMoveResizeWindow(i->dpy, i->menu_win, x, y, w, h * 5);
-	drw_resize(i->menu_drw, w, h * 5);
-	sel = draw_main_menu(i, x, y, x, y, w, h);
+	XMoveResizeWindow(i->dpy, i->menu_win, x, y, w, h * (5 + n_hid));
+	drw_resize(i->menu_drw, w, h * (5 + n_hid));
+	sel = draw_main_menu(i, x, y, x, y, w, h, n_hid);
 
 	XGrabPointer(i->dpy,
 		i->menu_win,
@@ -426,7 +495,8 @@ void main_menu(Iguassu *i, int x, int y)
 				ev.xmotion.y,
 				ev.xmotion.x,
 				w,
-				h);
+				h,
+				n_hid);
 			break;
 		default:
 			handle_event(i, &ev);
@@ -461,12 +531,19 @@ void main_menu(Iguassu *i, int x, int y)
 		break;
 	case MENU_DELETE:
 		win = select_win(i);
-		if (win != None) {
+		if (win != None)
 			XKillClient(i->dpy, win);
-		}
 		break;
 	case MENU_HIDE:
+		win = select_win(i);
+		if (win != None)
+			hide(i, win);
 		break;
+	default:
+		if (sel >= 5) {
+			sel = sel - 4;
+			unhide_by_idx(i, sel);
+		}
 	}
 }
 
@@ -476,7 +553,7 @@ void button_press(Iguassu *i, XEvent *e)
 
 	if (ev.window == i->root) {
 		if (ev.button == Button3)
-			main_menu(i, ev.x, ev.y);
+			main_menu(i, ev.x_root, ev.y_root);
 		else
 			printf("other menu\n");
 	} else {
