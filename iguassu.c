@@ -64,8 +64,7 @@ typedef struct Iguassu {
 
 /* Not configurable because obvious. If you change this anyway, go to `void
  * main_menu(Iguassu *i, int x, int y)` and change the function according.
- * The function draw_main_menu may also be changed.
- * EDIT: same for the client_menu */
+ * The function draw_main_menu may also be changed. */
 static const char *main_menu_items[] = {
 	"New",
 	"Reshape",
@@ -326,6 +325,21 @@ clean:
 	XUngrabPointer(i->dpy, CurrentTime);
 }
 
+void property_change(Iguassu *i, XEvent *ev)
+{
+	XTextProperty prop;
+	XPropertyEvent *e = &ev->xproperty;
+	Client *c = find_window(i->clients, e->window);
+	if (c != NULL) {
+		if (c->name != NULL)
+			XFree(c->name);
+		if (XGetWMName(i->dpy, c->id, &prop))
+			c->name = prop.value;
+		else
+			c->name = NULL;
+	}
+}
+
 int managed(Iguassu *i, Window win)
 {
 	return (find_window(i->clients, win) != NULL);
@@ -393,7 +407,8 @@ void unmanage(Iguassu *i, Client *c)
 		p->next = c->next;
 	else if (i->clients == c)
 		i->clients = c->next;
-	XFree(c->name);
+	if (c->name != NULL)
+		XFree(c->name);
 	free(c);
 	
 	restore_focus(i);
@@ -463,7 +478,9 @@ int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h,
 			} else {
 				drw_setscheme(i->menu_drw, i->menu_color);
 			}
-			drw_text(i->menu_drw, 0, h * j, w, h, 0, c->name, 0);
+			
+			if (c->name != NULL)
+				drw_text(i->menu_drw, 0, h * j, w, h, 0, c->name, 0);
 
 			j++;
 		}
@@ -493,7 +510,9 @@ int draw_client_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int 
 		} else {
 			drw_setscheme(i->menu_drw, i->menu_color);
 		}
-		drw_text(i->menu_drw, 0, h * j, w, h, 0, c->name, 0);
+		
+		if (c->name != NULL)
+			drw_text(i->menu_drw, 0, h * j, w, h, 0, c->name, 0);
 
 		j++;
 
@@ -514,7 +533,7 @@ void main_menu(Iguassu *i, int x, int y)
 	n_hid = n_hidden(i->clients);
 	XMapRaised(i->dpy, i->menu_win);
 
-	drw_font_getexts(i->menu_font, "Reshape", 7, &w, &h);
+	drw_font_getexts(i->menu_font, MENU_LENGTH, 7, &w, &h);
 
 	x = x - (w / 2);
 	XMoveResizeWindow(i->dpy, i->menu_win, x, y, w, h * (5 + n_hid));
@@ -608,10 +627,13 @@ void client_menu(Iguassu *i, int x, int y)
 	XEvent ev;
 
 	nc = n_cli(i->clients);
+	if (nc < 1)
+		return;
+
 	XMapRaised(i->dpy, i->menu_win);
 
 	/* This keeps our menu consistent. */
-	drw_font_getexts(i->menu_font, "Reshape", 7, &w, &h);
+	drw_font_getexts(i->menu_font, MENU_LENGTH, 7, &w, &h);
 
 	x = x - (w / 2);
 	XMoveResizeWindow(i->dpy, i->menu_win, x, y, w, h * nc);
@@ -639,6 +661,8 @@ void client_menu(Iguassu *i, int x, int y)
 			break;
 		case MotionNotify:
 			nc = n_cli(i->clients);
+			if (nc < 1)
+				goto clean;
 			sel = draw_client_menu(
 				i,
 				x,
@@ -654,6 +678,7 @@ void client_menu(Iguassu *i, int x, int y)
 		}
 	}
 
+clean:
 	XUnmapWindow(i->dpy, i->menu_win);
 	XUngrabPointer(i->dpy, CurrentTime);
 
@@ -690,14 +715,9 @@ void handle_event(Iguassu *i, XEvent *ev)
 	case DestroyNotify:
 		destroy_notify(i, ev);
 		break;
-	case UnmapNotify:
-		printf("received unmap notify\n");
-		break;
 	case PropertyNotify:
-		printf("received property notify\n");
+		property_change(i, ev);
 		break;
-	default:
-		printf("received event %d\n", ev->type);
 	}
 }
 
@@ -709,6 +729,28 @@ void main_loop(Iguassu *i)
 		XSync(i->dpy, False);
 		XNextEvent(i->dpy, &ev);
 		handle_event(i, &ev);
+	}
+}
+
+void scan(Iguassu *i)
+{
+	unsigned int j, num;
+	Window d1, d2, *wins = NULL;
+	XWindowAttributes wa;
+
+	if (XQueryTree(i->dpy, i->root, &d1, &d2, &wins, &num)) {
+		for (j = 0; j < num; j++) {
+			if (!XGetWindowAttributes(i->dpy, wins[j], &wa))
+				continue;
+			if (wa.override_redirect || wa.map_state != IsViewable)
+				continue;
+			if (wins[j] == i->menu_win || wins[j] == i->swipe_win)
+				continue;
+			if (!managed(i, wins[j]))
+				manage(i, wins[j], &wa);
+		}
+		if (wins)
+			XFree(wins);
 	}
 }
 
@@ -783,6 +825,7 @@ int main(void)
 #endif
 	XDefineCursor(iguassu.dpy, iguassu.root, iguassu.cursors.left_ptr);
 
+	scan(&iguassu);
 	main_loop(&iguassu);
 
 	return 0;

@@ -23,3 +23,8 @@ static const char *menu_color_f[2] = { "#eaffea", "#448844" };
 
 /* Program to spawn on "new". */
 #define TERMINAL "alacritty"
+
+/* This sets the actual menu length. 'm' is usually a quite wide character
+ * even for variable fonts so you don't need much to get your desired
+ * length. */
+#define MENU_LENGTH "mmmmmmmmmmmm"
