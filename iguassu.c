@@ -90,6 +90,30 @@ Client *find_window(Client *c, Window win)
 	return find_window(c->next, win);
 }
 
+Client *find_previous_window(Client *c, Window win)
+{
+	if (c == NULL || c->next == NULL)
+		return NULL;
+	if (c->next->id == win)
+		return c;
+	return find_previous_window(c->next, win);
+}
+
+void focus(Iguassu *i, Window win)
+{
+	Client *p = find_previous_window(i->clients, win);
+	Client *c;
+	if (p != NULL) {
+		c = p->next;
+		p->next = c->next;
+		c->next = i->clients;
+		i->clients = c;
+	}
+
+	XRaiseWindow(i->dpy, win);
+	XSetInputFocus(i->dpy, win, RevertToParent, CurrentTime);
+}
+
 Window select_win(Iguassu *i)
 {
 	XEvent ev;
@@ -171,6 +195,7 @@ void move_client(Iguassu *i, Client *c)
 	}
 
 	XMoveWindow(i->dpy, c->id, x, y);
+	focus(i, c->id);
 
 clean:
 	XUnmapWindow(i->dpy, i->swipe_win);
@@ -247,6 +272,7 @@ void reshape_client(Iguassu *i, Client *c)
 		h = MIN_WINDOW_SIZE;
 
 	XMoveResizeWindow(i->dpy, c->id, x, y, w, h);
+	focus(i, c->id);
 
 clean:
 	XUnmapWindow(i->dpy, i->swipe_win);
@@ -273,6 +299,17 @@ void manage(Iguassu *i, Window win, XWindowAttributes *wa)
 		new_client->name = prop.value;
 	else
 		new_client->name = NULL;
+
+	XGrabButton(i->dpy,
+		AnyButton,
+		AnyModifier,
+		win,
+		False,
+		ButtonPressMask,
+		GrabModeAsync,
+		GrabModeSync,
+		None,
+		None);
 
 	XSelectInput(i->dpy,
 		win,
@@ -416,7 +453,7 @@ void button_press(Iguassu *i, XEvent *e)
 		else
 			printf("other menu\n");
 	} else {
-		printf("focus change\n");
+		focus(i, ev.window);
 	}
 }
 
