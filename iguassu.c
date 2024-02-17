@@ -85,6 +85,14 @@ static const char *main_menu_items[] = {
 /* Some functions have a dependency in handle_event, so we declare it here. */
 void handle_event(Iguassu *i, XEvent *ev);
 
+/* This may look like a bad pratice but this avoids things like setting the
+ * focus to an already-destroyed window and crashing because of that. I swear I
+ * know what I'm doing. */
+int error_handler(Display *dpy, XErrorEvent *e)
+{
+	return 0;
+}
+
 Client *find_window(Client *c, Window win)
 {
 	if (c == NULL)
@@ -465,7 +473,7 @@ void unmanage(Iguassu *i, Client *c)
 	if (c->name != NULL)
 		XFree(c->name);
 	free(c);
-	
+
 	restore_focus(i);
 }
 
@@ -522,7 +530,7 @@ int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h,
 		}
 		drw_text(i->menu_drw, 0, h * j, w, h, 0, main_menu_items[j], 0);
 	}
-	
+
 	while (c != NULL) {
 		if (c->hidden) {
 			if (in_menu && cur_x >= h * j && cur_x < h * (j + 1)) {
@@ -531,7 +539,7 @@ int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h,
 			} else {
 				drw_setscheme(i->menu_drw, i->menu_color);
 			}
-			
+
 			if (c->name != NULL)
 				drw_text(i->menu_drw, 0, h * j, w, h, 0, c->name, 0);
 
@@ -563,7 +571,7 @@ int draw_client_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int 
 		} else {
 			drw_setscheme(i->menu_drw, i->menu_color);
 		}
-		
+
 		if (c->name != NULL)
 			drw_text(i->menu_drw, 0, h * j, w, h, 0, c->name, 0);
 
@@ -912,6 +920,8 @@ int main(void)
 		True,
 		GrabModeAsync,
 		GrabModeAsync);
+
+	XSetErrorHandler(error_handler);
 
 	scan(&iguassu);
 	main_loop(&iguassu);
