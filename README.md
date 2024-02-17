@@ -15,6 +15,7 @@ Stuff I still want to add in the future:
   window event and I didn't managed to differentiate it from a real click. The
   result of this is a buggy behaviour when right-clicking 9term (this happens in
   the Plan 9 From User Space rio too).  
+- Multi-head support.  
 
 ## Obligatory screenshots
 
