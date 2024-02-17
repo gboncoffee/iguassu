@@ -129,13 +129,27 @@ int n_cli(Client *c)
 void restore_focus(Iguassu *i)
 {
 	Client *c = i->clients;
-	
+	int first = 1;
 	while (c != NULL) {
-		if (!c->hidden) {
+		if (first && !c->hidden) {
 			XRaiseWindow(i->dpy, c->id);
 			XSetInputFocus(i->dpy, c->id, RevertToParent, CurrentTime);
-			return;
+			XUngrabButton(i->dpy, AnyButton, AnyModifier, c->id);
+			first = 0;
+			c = c->next;
+			continue;
 		}
+
+		XGrabButton(i->dpy,
+			AnyButton,
+			AnyModifier,
+			c->id,
+			False,
+			ButtonPressMask,
+			GrabModeAsync,
+			GrabModeSync,
+			None,
+			None);
 
 		c = c->next;
 	}
@@ -143,9 +157,11 @@ void restore_focus(Iguassu *i)
 
 void focus(Iguassu *i, Window win)
 {
-	Client *p = find_previous_window(i->clients, win);
 	Client *c = find_window(i->clients, win);
+	if (c == NULL)
+		return;
 	c->hidden = 0;
+	Client *p = find_previous_window(i->clients, win);
 	if (p != NULL) {
 		c = p->next;
 		p->next = c->next;
@@ -153,8 +169,7 @@ void focus(Iguassu *i, Window win)
 		i->clients = c;
 	}
 
-	XMapRaised(i->dpy, win);
-	XSetInputFocus(i->dpy, win, RevertToParent, CurrentTime);
+	restore_focus(i);
 }
 
 void focus_by_idx(Iguassu *i, int n)
@@ -407,16 +422,13 @@ void manage(Iguassu *i, Window win, XWindowAttributes *wa)
 	XGrabButton(i->dpy,
 		AnyButton,
 		AnyModifier,
-		win,
+		new_client->id,
 		False,
 		ButtonPressMask,
 		GrabModeAsync,
 		GrabModeSync,
 		None,
 		None);
-
-	XGrabKey(i->dpy, i->fkey, MODMASK, win, True, GrabModeAsync, GrabModeAsync);
-	XGrabKey(i->dpy, i->rkey, MODMASK, win, True, GrabModeAsync, GrabModeAsync);
 
 	XSelectInput(i->dpy,
 		win,
@@ -426,8 +438,7 @@ void manage(Iguassu *i, Window win, XWindowAttributes *wa)
 	XSetWindowBorder(i->dpy, win, BORDER_COLOR);
 	XSetWindowBorderWidth(i->dpy, win, BORDER_WIDTH);
 	XMapWindow(i->dpy, win);
-	XSetInputFocus(i->dpy, win, RevertToParent, CurrentTime);
-	XRaiseWindow(i->dpy, win);
+	restore_focus(i);
 }
 
 void map_requested(Iguassu *i, XEvent *ev)
@@ -887,7 +898,7 @@ int main(void)
 #endif
 	XDefineCursor(iguassu.dpy, iguassu.root, iguassu.cursors.left_ptr);
 
-	/* Grab the keys. */
+	/* Grab keys. */
 	iguassu.fkey = XKeysymToKeycode(iguassu.dpy, FULLSCREEN_KEY);
 	XGrabKey(iguassu.dpy,
 		iguassu.fkey,
