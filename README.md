@@ -16,7 +16,7 @@ Stuff I still want to add in the future:
   result of this is a buggy behaviour when right-clicking 9term (this happens in
   the Plan 9 From User Space rio too).  
 
-## Obrigatory screenshot
+## Obligatory screenshot
 
 ![Iguassu Window Manager](screenshot.png)
 
