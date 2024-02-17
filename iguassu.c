@@ -3,8 +3,6 @@
 #include <X11/Xutil.h>
 #include <X11/Xcursor/Xcursor.h>
 #include <X11/X.h>
-/* #include <X11/keysym.h> */
-/* #include <X11/Xproto.h> */
 #include <ctype.h>
 #include <assert.h>
 #include <unistd.h>
@@ -445,6 +443,7 @@ void manage(Iguassu *i, Window win, XWindowAttributes *wa)
 
 	XSetWindowBorder(i->dpy, win, BORDER_COLOR);
 	XSetWindowBorderWidth(i->dpy, win, BORDER_WIDTH);
+
 	restore_focus(i);
 }
 
@@ -777,6 +776,22 @@ void key_press(Iguassu *i, XEvent *e)
 	}
 }
 
+void configure_request(Iguassu *i, XEvent *ev)
+{
+	Window _dumb;
+	int x, y, w, h, _dumbi;
+
+	XConfigureRequestEvent *e = &ev->xconfigurerequest;
+	XGetGeometry(i->dpy, e->window, &_dumb, &x, &y, &w, &h, &_dumbi, &_dumbi);
+
+	x = e->value_mask & CWX ? e->x : x;
+	y = e->value_mask & CWY ? e->y : y;
+	w = e->value_mask & CWWidth ? e->width : w;
+	h = e->value_mask & CWHeight ? e->height : h;
+
+	XMoveResizeWindow(i->dpy, e->window, x, y, w, h);
+}
+
 void handle_event(Iguassu *i, XEvent *ev)
 {
 	switch (ev->type) {
@@ -794,6 +809,9 @@ void handle_event(Iguassu *i, XEvent *ev)
 		break;
 	case PropertyNotify:
 		property_change(i, ev);
+		break;
+	case ConfigureRequest:
+		configure_request(i, ev);
 		break;
 	}
 }
