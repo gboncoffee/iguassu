@@ -1,4 +1,4 @@
-static const char *font[] = { "Liberation Sans:size=12" };
+static const char *font[] = { "Liberation Sans:size=14" };
 
 /* DRW colors, so hex strings. */
 static const char *menu_color[2] = { "#000000", "#eaffea" };
@@ -15,7 +15,7 @@ static const char *menu_color_f[2] = { "#eaffea", "#448844" };
 /* Probably doesn't matter, just put the same as the DRW. */
 #define MENU_BACKGROUND_COLOR 0xeaffea
 /* Pixels. */
-#define BORDER_WIDTH 2
+#define BORDER_WIDTH 3
 
 /* Reshape will use this width and/or height (pixels) if trying to resize to
  * less than it, thus preventing resizing to dumb window sizes. */
@@ -27,7 +27,7 @@ static const char *menu_color_f[2] = { "#eaffea", "#448844" };
 /* This sets the actual menu length. 'm' is usually a quite wide character
  * even for variable fonts so you don't need much to get your desired
  * length. */
-#define MENU_LENGTH "mmmmmmmmmmmmmmmmmmmm"
+#define MENU_LENGTH "mmmmmmmmmmmmmmmmmmmmmmmmmmmm"
 
 /* There are two keybinds and both need the modmask. */
 #define MODMASK (Mod4Mask)

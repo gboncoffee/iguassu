@@ -599,7 +599,7 @@ void main_menu(Iguassu *i, int x, int y)
 		PointerMotionMask | ButtonPressMask | ButtonReleaseMask,
 		GrabModeAsync,
 		GrabModeAsync,
-		i->menu_win,
+		None,
 		i->cursors.left_ptr,
 		CurrentTime);
 
@@ -699,7 +699,7 @@ void client_menu(Iguassu *i, int x, int y)
 		PointerMotionMask | ButtonPressMask | ButtonReleaseMask,
 		GrabModeAsync,
 		GrabModeAsync,
-		i->menu_win,
+		None,
 		i->cursors.left_ptr,
 		CurrentTime);
 
