@@ -131,13 +131,15 @@ void restore_focus(Iguassu *i)
 	Client *c = i->clients;
 	int first = 1;
 	while (c != NULL) {
-		if (first && !c->hidden) {
-			XRaiseWindow(i->dpy, c->id);
-			XSetInputFocus(i->dpy, c->id, RevertToParent, CurrentTime);
-			XUngrabButton(i->dpy, AnyButton, AnyModifier, c->id);
-			first = 0;
-			c = c->next;
-			continue;
+		if (!c->hidden) {
+			XMapWindow(i->dpy, c->id);
+			if (first) {
+				XRaiseWindow(i->dpy, c->id);
+				XSetInputFocus(i->dpy, c->id, RevertToParent, CurrentTime);
+				XUngrabButton(i->dpy, AnyButton, AnyModifier, c->id);
+				first = 0;
+				goto next;
+			}
 		}
 
 		XGrabButton(i->dpy,
@@ -151,6 +153,7 @@ void restore_focus(Iguassu *i)
 			None,
 			None);
 
+next:
 		c = c->next;
 	}
 }
@@ -163,7 +166,6 @@ void focus(Iguassu *i, Window win)
 	c->hidden = 0;
 	Client *p = find_previous_window(i->clients, win);
 	if (p != NULL) {
-		c = p->next;
 		p->next = c->next;
 		c->next = i->clients;
 		i->clients = c;
@@ -232,8 +234,7 @@ void move_client(Iguassu *i, Client *c)
 
 	XGetGeometry(i->dpy, c->id, &_dumbw, &x, &y, &width, &height, &_dumb, &_dumb);
 	XMoveResizeWindow(i->dpy, i->swipe_win, x, y, width, height);
-	XMapWindow(i->dpy, i->swipe_win);
-	XRaiseWindow(i->dpy, i->swipe_win);
+	XMapRaised(i->dpy, i->swipe_win);
 
 	XQueryPointer(i->dpy, i->swipe_win, &_dumbw, &_dumbw, &_dumb, &_dumb,
 		&delta_x, &delta_y, &_dumb);
@@ -336,8 +337,7 @@ void reshape_client(Iguassu *i, Client *c)
 			y = fy;
 			reshaping = 1;
 			XMoveResizeWindow(i->dpy, i->swipe_win, x, y, 1, 1);
-			XMapWindow(i->dpy, i->swipe_win);
-			XRaiseWindow(i->dpy, i->swipe_win);
+			XMapRaised(i->dpy, i->swipe_win);
 			break;
 		default:
 			handle_event(i, &ev);
@@ -437,7 +437,6 @@ void manage(Iguassu *i, Window win, XWindowAttributes *wa)
 
 	XSetWindowBorder(i->dpy, win, BORDER_COLOR);
 	XSetWindowBorderWidth(i->dpy, win, BORDER_WIDTH);
-	XMapWindow(i->dpy, win);
 	restore_focus(i);
 }
 
@@ -483,10 +482,9 @@ void hide(Iguassu *i, Window win)
 	Client *c = find_window(i->clients, win);
 	if (c != NULL) {
 		c->hidden = 1;
+		restore_focus(i);
 		XUnmapWindow(i->dpy, c->id);
 	}
-	
-	restore_focus(i);
 }
 
 void unhide_by_idx(Iguassu *i, int n)
@@ -497,7 +495,6 @@ void unhide_by_idx(Iguassu *i, int n)
 			n--;
 			if (n == 0) {
 				c->hidden = 0;
-				XMapWindow(i->dpy, c->id);
 				focus(i, c->id);
 				return;
 			}
