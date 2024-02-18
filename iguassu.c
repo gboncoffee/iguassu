@@ -593,7 +593,7 @@ void main_menu(Iguassu *i, int x, int y)
 	n_hid = n_hidden(i->clients);
 	XMapRaised(i->dpy, i->menu_win);
 
-	drw_font_getexts(i->menu_font, MENU_LENGTH, 7, &w, &h);
+	drw_font_getexts(i->menu_font, MENU_LENGTH, sizeof(MENU_LENGTH), &w, &h);
 
 	x = x - (w / 2);
 	XMoveResizeWindow(i->dpy, i->menu_win, x, y, w, h * (5 + n_hid));
@@ -693,7 +693,7 @@ void client_menu(Iguassu *i, int x, int y)
 	XMapRaised(i->dpy, i->menu_win);
 
 	/* This keeps our menu consistent. */
-	drw_font_getexts(i->menu_font, MENU_LENGTH, 7, &w, &h);
+	drw_font_getexts(i->menu_font, MENU_LENGTH, sizeof(MENU_LENGTH), &w, &h);
 
 	x = x - (w / 2);
 	XMoveResizeWindow(i->dpy, i->menu_win, x, y, w, h * nc);
