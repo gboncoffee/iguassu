@@ -6,7 +6,8 @@ Differences from Plan 9 From User Space rio:
 - Text rendering via Xft so TrueType support.  
 - Configuration via source code only (`config.h`).  
 - No compiled limits.  
-- Two keybinds: one for fullscreen and one for reshaping.  
+- Three keybinds: one for fullscreen, one for reshaping and one for fixing bad
+  rendered windows.  
 - Additional menu on button 1 that shows all windows.  
 
 Stuff I still want to add in the future:  
