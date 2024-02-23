@@ -6,6 +6,8 @@
 #include <ctype.h>
 #include <assert.h>
 #include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
 #include "drw.h"
 
 /*
@@ -97,6 +99,11 @@ void handle_event(Iguassu *i, XEvent *ev);
 int error_handler(Display *dpy, XErrorEvent *e)
 {
 	return 0;
+}
+
+void child_handler(int _a)
+{
+	wait(NULL);
 }
 
 Client *find_window_in_container(Container *con, Window win)
@@ -1121,6 +1128,7 @@ int main(void)
 		GrabModeAsync);
 
 	XSetErrorHandler(error_handler);
+	signal(SIGCHLD, child_handler);
 
 	scan(&iguassu);
 	main_loop(&iguassu);
