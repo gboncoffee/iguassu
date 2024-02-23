@@ -32,9 +32,17 @@
 typedef struct Client {
 	char *name;
 	Window id;
-	short int hidden;
+	pid_t pid;
 	struct Client *next;
 } Client;
+
+typedef struct Container {
+	Client *clients;
+	short int allow_config_req;
+	short int hidden;
+	struct Container *next;
+	struct Container *prev;
+} Container;
 
 typedef struct Cursors {
 	Cursor left_ptr;
@@ -44,7 +52,7 @@ typedef struct Cursors {
 } Cursors;
 
 typedef struct Iguassu {
-	Client *clients;
+	Container *containers;
 	Drw *menu_drw;
 	Clr *menu_color;
 	Clr *menu_color_f;
@@ -91,61 +99,83 @@ int error_handler(Display *dpy, XErrorEvent *e)
 	return 0;
 }
 
-Client *find_window(Client *c, Window win)
+Client *find_window_in_container(Container *con, Window win)
 {
-	if (c == NULL)
-		return NULL;
-	if (c->id == win)
-		return c;
-	return find_window(c->next, win);
+	for (Client *c = con->clients; c != NULL; c = c->next)
+		if (c->id == win)
+			return c;
+	return NULL;
 }
 
-Client *find_previous_window(Client *c, Window win)
+Client *find_window(Iguassu *i, Window win)
 {
-	if (c == NULL || c->next == NULL)
-		return NULL;
-	if (c->next->id == win)
-		return c;
-	return find_previous_window(c->next, win);
+	Client *cli;
+	for (Container *c = i->containers; c != NULL; c = c->next)
+		if ((cli = find_window_in_container(c, win)) != NULL)
+			return cli;
+	return NULL;
 }
 
-Client *get_current(Client *c)
+Container *find_container(Iguassu *i, Window win)
 {
-	if (c == NULL)
-		return NULL;
-	if (!c->hidden)
-		return c;
-	return get_current(c->next);
+	Client *cli;
+	for (Container *c = i->containers; c != NULL; c = c->next)
+		if ((cli = find_window_in_container(c, win)) != NULL)
+			return c;
+	return NULL;
 }
 
-int n_hidden(Client *c)
+Container *get_current(Iguassu *i)
 {
-	if (c == NULL)
-		return 0;
-	return c->hidden + n_hidden(c->next);
+	for (Container *c = i->containers; c != NULL; c = c->next)
+		if (!c->hidden)
+			return c;
+	return NULL;
 }
 
-int n_cli(Client *c)
+int n_hidden(Iguassu *i)
 {
-	if (c == NULL)
-		return 0;
-	return 1 + n_cli(c->next);
+	int n = 0;
+	for (Container *c = i->containers; c != NULL; c = c->next)
+		if (c->hidden)
+			n++;
+	return n;
+}
+
+int n_cont(Iguassu *i)
+{
+	int n = 0;
+	for (Container *c = i->containers; c != NULL; c = c->next)
+		n++;
+	return n;
+}
+
+int n_cli(Iguassu *i)
+{
+	int n = 0;
+	for (Container *c = i->containers; c != NULL; c = c->next)
+		for (Client *l = c->clients; l != NULL; l = l->next)
+			n++;
+	return n;
 }
 
 void restore_focus(Iguassu *i)
 {
-	Client *c = i->clients;
 	int first = 1;
-	while (c != NULL) {
-		if (!c->hidden) {
+	for (Container *con = i->containers; con != NULL; con = con->next) {
+		Client *c = con->clients;
+		if (!con->hidden) {
 			XMapWindow(i->dpy, c->id);
 			if (first) {
 				XRaiseWindow(i->dpy, c->id);
 				XSetInputFocus(i->dpy, c->id, RevertToParent, CurrentTime);
 				XUngrabButton(i->dpy, AnyButton, AnyModifier, c->id);
 				first = 0;
-				goto next;
+				continue;
 			}
+			for (c = c->next; c != NULL; c = c->next)
+				XUnmapWindow(i->dpy, c->id);
+			c = con->clients;
 		}
 
 		XGrabButton(i->dpy,
@@ -158,40 +188,40 @@ void restore_focus(Iguassu *i)
 			GrabModeSync,
 			None,
 			None);
-
-next:
-		c = c->next;
 	}
 }
 
-void focus(Iguassu *i, Window win)
+void focus_container(Iguassu *i, Container *c)
 {
-	Client *c = find_window(i->clients, win);
 	if (c == NULL)
 		return;
 	c->hidden = 0;
-	Client *p = find_previous_window(i->clients, win);
-	if (p != NULL) {
-		p->next = c->next;
-		c->next = i->clients;
-		i->clients = c;
+
+	if (i->containers != c) {
+		if (c->prev != NULL)
+			c->prev->next = c->next;
+		if (c->next != NULL)
+			c->next->prev = c->prev;
+		c->prev = NULL;
+		c->next = i->containers;
+		if (i->containers != NULL)
+			i->containers->prev = c;
+		i->containers = c;
 	}
 
 	restore_focus(i);
 }
 
+#define focus_window(i, win) focus_container((i), find_container((i), (win)))
+
 void focus_by_idx(Iguassu *i, int n)
 {
-	Client *c = i->clients;
-
-	while (c != NULL) {
-		if (n == 0) {
-			focus(i, c->id);
-			return;
+	for (Container *c = i->containers; c != NULL; c = c->next) {
+		if (!n) {
+			focus_container(i, c);
+			break;
 		}
 		n--;
-
-		c = c->next;
 	}
 }
 
@@ -230,20 +260,22 @@ Window select_win(Iguassu *i)
 	return sel;
 }
 
-void move_client(Iguassu *i, Client *c)
+void move_container(Iguassu *i, Container *c)
 {
 	XEvent ev;
-	int x, y, width, height;
+	int x, y;
+	unsigned int width, height;
 	int delta_x, delta_y;
 	int _dumb;
+	unsigned int _dumbu;
 	Window _dumbw;
 
-	XGetGeometry(i->dpy, c->id, &_dumbw, &x, &y, &width, &height, &_dumb, &_dumb);
+	XGetGeometry(i->dpy, c->clients->id, &_dumbw, &x, &y, &width, &height, &_dumbu, &_dumbu);
 	XMoveResizeWindow(i->dpy, i->swipe_win, x, y, width, height);
 	XMapRaised(i->dpy, i->swipe_win);
 
 	XQueryPointer(i->dpy, i->swipe_win, &_dumbw, &_dumbw, &_dumb, &_dumb,
-		&delta_x, &delta_y, &_dumb);
+		&delta_x, &delta_y, &_dumbu);
 
 	XGrabPointer(
 		i->dpy,
@@ -275,15 +307,17 @@ void move_client(Iguassu *i, Client *c)
 		}
 	}
 
-	XMoveWindow(i->dpy, c->id, x, y);
-	focus(i, c->id);
+	for (Client *cli = c->clients; cli != NULL; cli = cli->next)
+		XMoveWindow(i->dpy, cli->id, x, y);
+
+	focus_container(i, c);
 
 clean:
 	XUnmapWindow(i->dpy, i->swipe_win);
 	XUngrabPointer(i->dpy, CurrentTime);
 }
 
-void reshape_client(Iguassu *i, Client *c)
+void reshape_container(Iguassu *i, Container *c)
 {
 	XEvent ev;
 	int fx, fy, x, y;
@@ -355,20 +389,21 @@ void reshape_client(Iguassu *i, Client *c)
 	if (h < MIN_WINDOW_SIZE)
 		h = MIN_WINDOW_SIZE;
 
-	XMoveResizeWindow(i->dpy, c->id, x, y, w, h);
-	focus(i, c->id);
+	for (Client *cli = c->clients; cli != NULL; cli = cli->next)
+		XMoveResizeWindow(i->dpy, cli->id, x, y, w, h);
+	focus_container(i, c);
 
 clean:
 	XUnmapWindow(i->dpy, i->swipe_win);
 	XUngrabPointer(i->dpy, CurrentTime);
 }
 
-void fullscreen_client(Iguassu *i, Client *c)
+void fullscreen_container(Iguassu *i, Container *c)
 {
 	XEvent ev;
 	XKeyEvent e;
-	XSetWindowBorderWidth(i->dpy, c->id, 0);
-	XMoveResizeWindow(i->dpy, c->id, 0, 0, i->sw, i->sh);
+	XSetWindowBorderWidth(i->dpy, c->clients->id, 0);
+	XMoveResizeWindow(i->dpy, c->clients->id, 0, 0, i->sw, i->sh);
 
 	for (;;) {
 		XSync(i->dpy, False);
@@ -378,8 +413,8 @@ void fullscreen_client(Iguassu *i, Client *c)
 			e = ev.xkey;
 
 			if (e.state == MODMASK && i->fkey == e.keycode) {
-				XSetWindowBorderWidth(i->dpy, c->id, BORDER_WIDTH);
-				reshape_client(i, c);
+				XSetWindowBorderWidth(i->dpy, c->clients->id, BORDER_WIDTH);
+				reshape_container(i, c);
 				return;
 			}
 		} else {
@@ -392,12 +427,12 @@ void property_change(Iguassu *i, XEvent *ev)
 {
 	XTextProperty prop;
 	XPropertyEvent *e = &ev->xproperty;
-	Client *c = find_window(i->clients, e->window);
+	Client *c = find_window(i, e->window);
 	if (c != NULL) {
 		if (c->name != NULL)
 			XFree(c->name);
 		if (XGetWMName(i->dpy, c->id, &prop))
-			c->name = prop.value;
+			c->name = (char*) prop.value;
 		else
 			c->name = NULL;
 	}
@@ -405,30 +440,157 @@ void property_change(Iguassu *i, XEvent *ev)
 
 int managed(Iguassu *i, Window win)
 {
-	return (find_window(i->clients, win) != NULL);
+	return (find_window(i, win) != NULL);
 }
 
-void manage(Iguassu *i, Window win, XWindowAttributes *wa)
+void new_container(Iguassu *i, Window win, char *name, pid_t pid, short int allow_config_req, short int hidden)
+{
+	Container *c = malloc(sizeof(Container));
+	assert(c != NULL && "Buy more ram lol");
+	c->clients = malloc(sizeof(Client));
+	assert(c->clients != NULL && "Buy more ram lol");
+
+	c->prev = NULL;
+	c->next = i->containers;
+	if (i->containers != NULL)
+		i->containers->prev = c;
+	i->containers = c;
+
+	c->allow_config_req = allow_config_req;
+	c->hidden = hidden;
+
+	c->clients->id = win;
+	c->clients->name = name;
+	c->clients->pid = pid;
+	c->clients->next = NULL;
+}
+
+pid_t get_parent_pid(pid_t p)
+{
+	unsigned int v = 0;
+
+	/* TODO: this is Linux-only. */
+	FILE *f;
+	char buf[256];
+	snprintf(buf, sizeof(buf) - 1, "/proc/%u/stat", (unsigned) p);
+
+	if (!(f = fopen(buf, "r")))
+		return 0;
+
+	fscanf(f, "%*u %*s %*c %u", &v);
+	fclose(f);
+
+	return (pid_t) v;
+}
+
+short int is_desc_process(pid_t p, pid_t c)
+{
+	printf("%d %d\n", p, c);
+	while (p != c && c != 0) {
+		c = get_parent_pid(c);
+		printf("%d %d\n", p, c);
+	}
+
+	return (short int) c;
+}
+
+pid_t get_window_pid(Iguassu *i, Window win)
+{
+	Atom type;
+	int format;
+	unsigned long len, bytes;
+	unsigned char *prop;
+	pid_t ret;
+
+	if (XGetWindowProperty(i->dpy,
+		win,
+		XInternAtom(i->dpy, "_NET_WM_PID", 0),
+		0,
+		1,
+		False,
+		AnyPropertyType,
+		&type,
+		&format,
+		&len,
+		&bytes,
+		&prop) != Success || !prop)
+
+		return 0;
+
+	ret = *(pid_t*) prop;
+	XFree(prop);
+
+	return ret;
+}
+
+int try_manage_from_new(Iguassu *i, Window win, pid_t pid, char *name)
+{
+	printf("from new\n");
+	if (pid == 0)
+		return 0;
+
+	for (Container *c = i->containers; c != NULL; c = c->next) {
+		if (c->clients->pid == pid && c->clients->id == None) {
+			c->clients->id = win;
+			c->clients->name = name;
+			reshape_container(i, c);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int try_manage_on_container(Iguassu *i, Window win, pid_t pid, char *name)
+{
+	printf("on conta\n");
+	Client *new_client;
+	int x, y;
+	unsigned int width, height, _dumbu;
+	Window _dumbw;
+
+	for (Container *c = i->containers; c != NULL; c = c->next) {
+		if (is_desc_process(c->clients->pid, pid) && c->clients->id != None) {
+			new_client = malloc(sizeof(Client));
+			assert(new_client != NULL && "Buy more ram lol");
+
+			XGetGeometry(i->dpy, c->clients->id, &_dumbw, &x, &y, &width, &height, &_dumbu, &_dumbu);
+			XMapWindow(i->dpy, win);
+			XMoveResizeWindow(i->dpy, win, x, y, width, height);
+			printf("hello\n");
+			new_client->next = c->clients;
+			c->clients = new_client;
+
+			focus_container(i, c);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+void manage_new(Iguassu *i, Window win, pid_t pid, char *name)
+{
+	printf("new\n");
+	new_container(i, win, name, pid, 1, 0);
+	restore_focus(i);
+}
+
+void manage(Iguassu *i, Window win)
 {
 	XTextProperty prop;
-
-	Client *new_client = malloc(sizeof(Client));
-	assert((new_client != NULL) || "Buy more ram lol");
-
-	new_client->hidden = 0;
-	new_client->id = win;
-	new_client->next = i->clients;
-	i->clients = new_client;
+	pid_t pid = get_window_pid(i, win);
+	char *name;
 
 	if (XGetWMName(i->dpy, win, &prop))
-		new_client->name = prop.value;
+		name = (char*) prop.value;
 	else
-		new_client->name = NULL;
+		name = NULL;
 
 	XGrabButton(i->dpy,
 		AnyButton,
 		AnyModifier,
-		new_client->id,
+		win,
 		False,
 		ButtonPressMask,
 		GrabModeAsync,
@@ -444,7 +606,11 @@ void manage(Iguassu *i, Window win, XWindowAttributes *wa)
 	XSetWindowBorder(i->dpy, win, BORDER_COLOR);
 	XSetWindowBorderWidth(i->dpy, win, BORDER_WIDTH);
 
-	restore_focus(i);
+	if (try_manage_from_new(i, win, pid, name))
+		return;
+	if (try_manage_on_container(i, win, pid, name))
+		return;
+	manage_new(i, win, pid, name);
 }
 
 void map_requested(Iguassu *i, XEvent *ev)
@@ -452,26 +618,47 @@ void map_requested(Iguassu *i, XEvent *ev)
 	XWindowAttributes wa;
 	XMapRequestEvent *e = &ev->xmaprequest;
 
-	if (!XGetWindowAttributes(i->dpy, e->window, &wa))
+	if (!XGetWindowAttributes(i->dpy, e->window, &wa)
+		|| wa.override_redirect
+		|| managed(i, e->window))
+
 		return;
-	if (wa.override_redirect)
-		return;
-	if (e->window == i->menu_win || e->window == i->swipe_win)
-		return;
-	if (!managed(i, e->window))
-		manage(i, e->window, &wa);
+	manage(i, e->window);
 }
 
-void unmanage(Iguassu *i, Client *c)
+void remove_null_container(Iguassu *i, Container *c)
 {
-	Client *p = find_previous_window(i->clients, c->id);
-	if (p != NULL)
-		p->next = c->next;
-	else if (i->clients == c)
-		i->clients = c->next;
-	if (c->name != NULL)
-		XFree(c->name);
+	assert(c->clients == NULL);
+
+	if (c->prev != NULL)
+		c->prev->next = c->next;
+	if (c->next != NULL)
+		c->next->prev = c->prev;
+	if (i->containers == c)
+		i->containers = c->next;
 	free(c);
+}
+
+void unmanage(Iguassu *i, Container *c, Window win)
+{
+	Client *prev = NULL;
+	for (Client *cli = c->clients; cli != NULL; cli = cli->next) {
+		if (cli->id == win) {
+			if (prev != NULL)
+				prev->next = cli->next;
+			else if (c->clients == cli)
+				c->clients = cli->next;
+			if (cli->name != NULL)
+				XFree(cli->name);
+			free(cli);
+			break;
+		}
+
+		prev = cli;
+	}
+
+	if (c->clients == NULL)
+		remove_null_container(i, c);
 
 	restore_focus(i);
 }
@@ -479,35 +666,34 @@ void unmanage(Iguassu *i, Client *c)
 void destroy_notify(Iguassu *i, XEvent *ev)
 {
 	XDestroyWindowEvent *e = &ev->xdestroywindow;
-	Client *c = find_window(i->clients, e->window);
+	Container *c = find_container(i, e->window);
 	if (c != NULL)
-		unmanage(i, c);
+		unmanage(i, c, e->window);
 }
 
 void hide(Iguassu *i, Window win)
 {
-	Client *c = find_window(i->clients, win);
+	Container *c = find_container(i, win);
 	if (c != NULL) {
 		c->hidden = 1;
+		for (Client *cli = c->clients; cli != NULL; cli = cli->next)
+			XUnmapWindow(i->dpy, cli->id);
+
 		restore_focus(i);
-		XUnmapWindow(i->dpy, c->id);
 	}
 }
 
 void unhide_by_idx(Iguassu *i, int n)
 {
-	Client *c = i->clients;
-	while (c != NULL) {
+	for (Container *c = i->containers; c != NULL; c = c->next) {
 		if (c->hidden) {
 			n--;
 			if (n == 0) {
 				c->hidden = 0;
-				focus(i, c->id);
+				focus_container(i, c);
 				return;
 			}
 		}
-
-		c = c->next;
 	}
 }
 
@@ -515,7 +701,6 @@ int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h,
 {
 	int j, in_menu;
 	int r = -1;
-	Client *c = i->clients;
 
 	drw_rect(i->menu_drw, 0, 0, w, h * (5 + n_hid), 1, 0);
 
@@ -530,7 +715,7 @@ int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h,
 		drw_text(i->menu_drw, 0, h * j, w, h, 0, main_menu_items[j], 0);
 	}
 
-	while (c != NULL) {
+	for (Container *c = i->containers; c != NULL; c = c->next) {
 		if (c->hidden) {
 			if (in_menu && cur_x >= h * j && cur_x < h * (j + 1)) {
 				drw_setscheme(i->menu_drw, i->menu_color_f);
@@ -539,13 +724,11 @@ int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h,
 				drw_setscheme(i->menu_drw, i->menu_color);
 			}
 
-			if (c->name != NULL)
-				drw_text(i->menu_drw, 0, h * j, w, h, 0, c->name, 0);
+			if (c->clients != NULL && c->clients->name != NULL)
+				drw_text(i->menu_drw, 0, h * j, w, h, 0, c->clients->name, 0);
 
 			j++;
 		}
-
-		c = c->next;
 	}
 
 	drw_map(i->menu_drw, i->menu_win, 0, 0, w, h * (5 + n_hid));
@@ -553,17 +736,16 @@ int draw_main_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h,
 	return r;
 }
 
-int draw_client_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h, int nc)
+int draw_container_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int h, int nc)
 {
 	int j, in_menu;
 	int r = -1;
-	Client *c = i->clients;
 
 	drw_rect(i->menu_drw, 0, 0, w, h * nc, 1, 0);
 
 	in_menu = cur_x >= 0 && cur_y >= 0 && cur_x <= h * nc && cur_y <= w;
 	j = 0;
-	while (c != NULL) {
+	for (Container *c = i->containers; c != NULL; c = c->next) {
 		if (in_menu && cur_x >= h * j && cur_x < h * (j + 1)) {
 			drw_setscheme(i->menu_drw, i->menu_color_f);
 			r = j;
@@ -571,12 +753,10 @@ int draw_client_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int 
 			drw_setscheme(i->menu_drw, i->menu_color);
 		}
 
-		if (c->name != NULL)
-			drw_text(i->menu_drw, 0, h * j, w, h, 0, c->name, 0);
+		if (c->clients != NULL && c->clients->name != NULL)
+			drw_text(i->menu_drw, 0, h * j, w, h, 0, c->clients->name, 0);
 
 		j++;
-
-		c = c->next;
 	}
 
 	drw_map(i->menu_drw, i->menu_win, 0, 0, w, h * nc);
@@ -586,11 +766,12 @@ int draw_client_menu(Iguassu *i, int x, int y, int cur_x, int cur_y, int w, int 
 
 void main_menu(Iguassu *i, int x, int y)
 {
-	int w, h, sel, pid, win, n_hid;
-	Client *cli;
+	unsigned int w, h;
+	int sel, pid, win, n_hid;
+	Container *c;
 	XEvent ev;
 
-	n_hid = n_hidden(i->clients);
+	n_hid = n_hidden(i);
 	XMapRaised(i->dpy, i->menu_win);
 
 	drw_font_getexts(i->menu_font, MENU_LENGTH, sizeof(MENU_LENGTH), &w, &h);
@@ -620,7 +801,7 @@ void main_menu(Iguassu *i, int x, int y)
 			exit = 1;
 			break;
 		case MotionNotify:
-			n_hid = n_hidden(i->clients);
+			n_hid = n_hidden(i);
 			sel = draw_main_menu(
 				i,
 				x,
@@ -647,19 +828,20 @@ void main_menu(Iguassu *i, int x, int y)
 			execlp(TERMINAL, TERMINAL, NULL);
 			exit(1);
 		}
+		new_container(i, None, NULL, pid, 0, 1);
 		break;
 	case MENU_RESHAPE:
 		win = select_win(i);
 		if (win != None) {
-			if ((cli = find_window(i->clients, win)) != NULL)
-				reshape_client(i, cli);
+			if ((c = find_container(i, win)) != NULL)
+				reshape_container(i, c);
 		}
 		break;
 	case MENU_MOVE:
 		win = select_win(i);
 		if (win != None) {
-			if ((cli = find_window(i->clients, win)) != NULL)
-				move_client(i, cli);
+			if ((c = find_container(i, win)) != NULL)
+				move_container(i, c);
 		}
 		break;
 	case MENU_DELETE:
@@ -680,13 +862,13 @@ void main_menu(Iguassu *i, int x, int y)
 	}
 }
 
-void client_menu(Iguassu *i, int x, int y)
+void container_menu(Iguassu *i, int x, int y)
 {
-	int w, h, sel, win, nc;
-	Client *cli;
+	int sel, nc;
+	unsigned int w, h;
 	XEvent ev;
 
-	nc = n_cli(i->clients);
+	nc = n_cont(i);
 	if (nc < 1)
 		return;
 
@@ -698,7 +880,7 @@ void client_menu(Iguassu *i, int x, int y)
 	x = x - (w / 2);
 	XMoveResizeWindow(i->dpy, i->menu_win, x, y, w, h * nc);
 	drw_resize(i->menu_drw, w, h * nc);
-	sel = draw_client_menu(i, x, y, x, y, w, h, nc);
+	sel = draw_container_menu(i, x, y, x, y, w, h, nc);
 
 	XGrabPointer(i->dpy,
 		i->menu_win,
@@ -720,10 +902,10 @@ void client_menu(Iguassu *i, int x, int y)
 			exit = 1;
 			break;
 		case MotionNotify:
-			nc = n_cli(i->clients);
+			nc = n_cont(i);
 			if (nc < 1)
 				goto clean;
-			sel = draw_client_menu(
+			sel = draw_container_menu(
 				i,
 				x,
 				y,
@@ -753,25 +935,25 @@ void button_press(Iguassu *i, XEvent *e)
 	if (ev.window == i->root) {
 		if (ev.button == Button3)
 			main_menu(i, ev.x_root, ev.y_root);
-		else
-			client_menu(i, ev.x_root, ev.y_root);
+		else if (ev.button == Button1)
+			container_menu(i, ev.x_root, ev.y_root);
 	} else {
-		focus(i, ev.window);
+		focus_window(i, ev.window);
 	}
 }
 
 void key_press(Iguassu *i, XEvent *e)
 {
 	XKeyEvent *ev = &e->xkey;
-	Client *c;
+	Container *c;
 
 	if (ev->state == MODMASK) {
 		if (i->fkey == ev->keycode) {
-			if ((c = get_current(i->clients)) != NULL)
-				fullscreen_client(i, c);
+			if ((c = get_current(i)) != NULL)
+				fullscreen_container(i, c);
 		} else if (i->rkey == ev->keycode) {
-			if ((c = get_current(i->clients)) != NULL)
-				reshape_client(i, c);
+			if ((c = get_current(i)) != NULL)
+				reshape_container(i, c);
 		}
 	}
 }
@@ -779,9 +961,13 @@ void key_press(Iguassu *i, XEvent *e)
 void configure_request(Iguassu *i, XEvent *ev)
 {
 	Window _dumb;
-	int x, y, w, h, _dumbi;
-
+	int x, y;
+	unsigned int w, h, _dumbi;
 	XConfigureRequestEvent *e = &ev->xconfigurerequest;
+	Container *c = find_container(i, e->window);
+	if (c == NULL || !c->allow_config_req)
+		return;
+
 	XGetGeometry(i->dpy, e->window, &_dumb, &x, &y, &w, &h, &_dumbi, &_dumbi);
 
 	x = e->value_mask & CWX ? e->x : x;
@@ -842,7 +1028,7 @@ void scan(Iguassu *i)
 			if (wins[j] == i->menu_win || wins[j] == i->swipe_win)
 				continue;
 			if (!managed(i, wins[j]))
-				manage(i, wins[j], &wa);
+				manage(i, wins[j]);
 		}
 		if (wins)
 			XFree(wins);
@@ -852,8 +1038,6 @@ void scan(Iguassu *i)
 int main(void)
 {
 	Iguassu iguassu;
-	XSetWindowAttributes swa;
-	KeyCode code;
 
 	if (!(iguassu.dpy = XOpenDisplay(NULL)))
 		return 1;
@@ -865,7 +1049,7 @@ int main(void)
 
 	/* I spend some time debugging stuff segfaulting because I didn't zeroed
 	 * this pointer from the beggining. */
-	iguassu.clients = NULL;
+	iguassu.containers = NULL;
 
 	/* Register to get the events. */
 	long mask = SubstructureRedirectMask
@@ -883,9 +1067,6 @@ int main(void)
 	iguassu.menu_color = drw_scm_create(iguassu.menu_drw, menu_color, 2);
 	iguassu.menu_color_f = drw_scm_create(iguassu.menu_drw, menu_color_f, 2);
 
-	swa.override_redirect = True;
-	swa.background_pixel = iguassu.menu_color[ColBg].pixel;
-	swa.event_mask = ExposureMask | KeyPressMask | VisibilityChangeMask;
 	iguassu.menu_win = XCreateSimpleWindow(
 		iguassu.dpy,
 		iguassu.root,
