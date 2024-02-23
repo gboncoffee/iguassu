@@ -35,6 +35,10 @@ static const char *menu_color_f[2] = { "#eaffea", "#448844" };
 #define FULLSCREEN_KEY XK_f
 #define RESHAPE_KEY XK_r
 
+/* This key resizes the window to 1 pixel less width and them to it's own
+ * size again. This fixes a window that thinks it has a different size. */
+#define REDRAW_KEY XK_a
+
 /* These are the only needed keybinds because:
  * 1- Fullscreen is very desirable nowadays and you need a keybind for that
  * (it's impossible to access the menu when a window is fullscreen)

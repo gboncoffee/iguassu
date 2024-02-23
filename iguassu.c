@@ -73,6 +73,7 @@ typedef struct Iguassu {
 	Cursors cursors;
 	KeyCode fkey;
 	KeyCode rkey;
+	KeyCode akey;
 } Iguassu;
 
 #include "config.h"
@@ -452,6 +453,23 @@ void property_change(Iguassu *i, XEvent *ev)
 	}
 }
 
+void redraw_client(Iguassu *i, Client *c)
+{
+	Window _dumb;
+	int x, y;
+	unsigned int w, h, _dumbi;
+
+	if (c != NULL) {
+		XSync(i->dpy, False);
+		XGetGeometry(i->dpy, c->id, &_dumb, &x, &y, &w, &h, &_dumbi, &_dumbi);
+		XSync(i->dpy, False);
+		XMoveResizeWindow(i->dpy, c->id, x, y, w-1, h);
+		XSync(i->dpy, False);
+		XMoveResizeWindow(i->dpy, c->id, x, y, w, h);
+		XSync(i->dpy, False);
+	}
+}
+
 int managed(Iguassu *i, Window win)
 {
 	return (find_window(i, win) != NULL);
@@ -568,6 +586,7 @@ int try_manage_on_container(Iguassu *i, Window win, pid_t pid, char *name)
 			assert(new_client != NULL && "Buy more ram lol");
 
 			XGetGeometry(i->dpy, c->clients->id, &_dumbw, &x, &y, &width, &height, &_dumbu, &_dumbu);
+			XMoveResizeWindow(i->dpy, win, x, y, width, height);
 			new_client->next = c->clients;
 			new_client->pid = pid;
 			new_client->name = name;
@@ -575,7 +594,7 @@ int try_manage_on_container(Iguassu *i, Window win, pid_t pid, char *name)
 			c->clients = new_client;
 
 			focus_container(i, c);
-			XMoveResizeWindow(i->dpy, win, x, y, width, height);
+
 			return 1;
 		}
 	}
@@ -967,6 +986,9 @@ void key_press(Iguassu *i, XEvent *e)
 		} else if (i->rkey == ev->keycode) {
 			if ((c = get_current(i)) != NULL)
 				reshape_container(i, c);
+		} else if (i->akey == ev->keycode) {
+			if ((c = get_current(i)) != NULL)
+				redraw_client(i, c->clients);
 		}
 	}
 }
@@ -1129,6 +1151,14 @@ int main(void)
 	iguassu.rkey = XKeysymToKeycode(iguassu.dpy, RESHAPE_KEY);
 	XGrabKey(iguassu.dpy,
 		iguassu.rkey,
+		MODMASK,
+		iguassu.root,
+		True,
+		GrabModeAsync,
+		GrabModeAsync);
+	iguassu.akey = XKeysymToKeycode(iguassu.dpy, REDRAW_KEY);
+	XGrabKey(iguassu.dpy,
+		iguassu.akey,
 		MODMASK,
 		iguassu.root,
 		True,
