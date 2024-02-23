@@ -16,7 +16,6 @@ Stuff I still want to add in the future:
   result of this is a buggy behaviour when right-clicking 9term (this happens in
   the Plan 9 From User Space rio too).  
 - Multi-head support.  
-- Actual rio emulation by managing windows PIDs (read more at the bottom).  
 
 ## Obligatory screenshots
 
@@ -26,8 +25,9 @@ Stuff I still want to add in the future:
 
 ## Build
 
-Iguassu depends on Xlib, Xft and freetype2. The `Makefile` uses the Tiny C
-Compiler by default but you may change it to `gcc` if you don't have `tcc`.
+Iguassu depends on Xlib (with XCB support), XCB, Xft and freetype2. The
+`Makefile` uses the Tiny C Compiler by default but you may change it to
+`gcc` if you don't have `tcc`.
 
 `drw.c` is bundled in the source code. I got it from [dmenu source
 code](http://tools.suckless.org/dmenu/). It's licensed under the MIT/X license,
@@ -61,23 +61,3 @@ Frontier](https://en.wikipedia.org/wiki/Triple_Frontier).
 ![Iguassu waterfalls](iguassu-waterfalls.jpg)
 Iguassu waterfalls, by me. Check the full-size picture at [my
 website](https://gboncoffee.github.io).
-
-## About actual rio emulation by managing windows PIDs
-
-At first, I decided not to create new windows by a reshape-like mouse sweep as
-it's not that feasible in Xorg. But I had an idea:
-
-- The `new` menu item uses `fork()` to spawn the new process, so it actually
-  knows the terminal PID but ignores it;  
-- We can instead save it;  
-- Once the children window sends a map request, we can check it's NET_WM_PID
-  property. If it's the value we saved, we associate both, and this window
-  should automatically have `reshape` called.  
-- When another window spawns, we check it's PID again and if it's a child from
-  the former. If it's, we associate both and keep the parent always under the
-  child.  
-- If NET_WM_PID is not set or the window is not children from any terminal
-  window, we just map it as it is, just like the current behaviour.  
-
-I have to code for a research project so I will not be working on this for some
-time, but I'll definitely try in the future!
