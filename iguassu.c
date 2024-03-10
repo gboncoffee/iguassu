@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <signal.h>
+#define DRW_IMPLEMENTATION
 #include "drw.h"
 
 /*
@@ -1100,9 +1101,19 @@ int main(void)
 
 	/* Create the menu. */
 	iguassu.menu_drw = drw_create(iguassu.dpy, iguassu.screen, iguassu.root, 10, 10);
+	if (iguassu.menu_drw == NULL)
+		return 1;
 	iguassu.menu_font = drw_fontset_create(iguassu.menu_drw, font, 1);
+	if (iguassu.menu_font == NULL)
+		return 1;
 	iguassu.menu_color = drw_scm_create(iguassu.menu_drw, menu_color, 2);
+	if (iguassu.menu_color == NULL)
+		return 1;
 	iguassu.menu_color_f = drw_scm_create(iguassu.menu_drw, menu_color_f, 2);
+	if (iguassu.menu_color_f == NULL)
+		return 1;
+
+	drw_setscheme(iguassu.menu_drw, iguassu.menu_color);
 
 	iguassu.menu_win = XCreateSimpleWindow(
 		iguassu.dpy,

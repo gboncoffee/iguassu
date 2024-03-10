@@ -26,9 +26,7 @@ Stuff I still want to add in the future:
 
 ## Build
 
-Iguassu depends on Xlib (with XCB support), XCB, Xft and freetype2. The
-`Makefile` uses the Tiny C Compiler by default but you may change it to
-`gcc` if you don't have `tcc`.
+Iguassu depends on Xlib (with XCB support), XCB, Xft and freetype2.
 
 `drw.c` is bundled in the source code. I got it from [dmenu source
 code](http://tools.suckless.org/dmenu/). It's licensed under the MIT/X license,
