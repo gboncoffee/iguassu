@@ -5,7 +5,8 @@ static const char *menu_color[2] = { "#000000", "#eaffea" };
 static const char *menu_color_f[2] = { "#eaffea", "#448844" };
 
 /* Hex numbers (RGB). */
-#define BORDER_COLOR 0x52aaad
+#define BORDER_FOCUS 0x52aaad
+#define BORDER_NORMAL 0x9eeeee
 #define MENU_BORDER_COLOR 0x88cb88
 #define SWIPE_BORDER_COLOR 0x88cb88
 #define SWIPE_BACKGROUND 0xffffff

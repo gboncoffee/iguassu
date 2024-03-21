@@ -199,7 +199,10 @@ void restore_focus(Iguassu *i)
 				XRaiseWindow(i->dpy, c->id);
 				XSetInputFocus(i->dpy, c->id, RevertToParent, CurrentTime);
 				XUngrabButton(i->dpy, AnyButton, AnyModifier, c->id);
+				XSetWindowBorder(i->dpy, c->id, BORDER_FOCUS);
 				first = 0;
+			} else {
+				XSetWindowBorder(i->dpy, c->id, BORDER_NORMAL);
 			}
 		} else {
 			for (; c != NULL; c = c->next)
@@ -636,7 +639,7 @@ void manage(Iguassu *i, Window win)
 		PointerMotionMask
 		| PropertyChangeMask);
 
-	XSetWindowBorder(i->dpy, win, BORDER_COLOR);
+	XSetWindowBorder(i->dpy, win, BORDER_NORMAL);
 	XSetWindowBorderWidth(i->dpy, win, BORDER_WIDTH);
 
 	if (try_manage_from_new(i, win, pid, name))
