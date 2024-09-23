@@ -58,5 +58,4 @@ of the three countries join - a place called the [Triple
 Frontier](https://en.wikipedia.org/wiki/Triple_Frontier).
 
 ![Iguassu waterfalls](iguassu-waterfalls.jpg)
-Iguassu waterfalls, by me. Check the full-size picture at [my
-website](https://gboncoffee.github.io).
+Iguassu waterfalls, by me.
